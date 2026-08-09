@@ -5,6 +5,7 @@ services:
       args:
         UI_SHARED_REPO: ${UI_SHARED_REPO:-https://github.com/ovikiss/mikrotik-ui-shared.git}
         UI_SHARED_REF: ${UI_SHARED_REF:-main}
+        UI_SHARED_REV: ${UI_SHARED_REV:-}
     environment:
       PROXMOX_SSH_HOST: ${PROXMOX_SSH_HOST:-}
       PROXMOX_SSH_PORT: ${PROXMOX_SSH_PORT:-}
@@ -35,4 +36,3 @@ services:
       - "8080:8080"
     volumes:
       - ./data:/data
-      - ${SSH_DIR:-~/.ssh}:/root/.ssh:ro

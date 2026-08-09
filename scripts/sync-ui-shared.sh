@@ -16,6 +16,10 @@ if [ -n "${UI_SHARED_DIR:-}" ] && [ -d "${UI_SHARED_DIR}" ]; then
 else
   SHARED_TMP_DIR="$(mktemp -d)"
   git clone --depth 1 --branch "${UI_SHARED_REF:-main}" "${UI_SHARED_REPO}" "$SHARED_TMP_DIR" >/dev/null 2>&1
+  if [ -n "${UI_SHARED_REV:-}" ]; then
+    git -C "$SHARED_TMP_DIR" fetch --depth 1 origin "$UI_SHARED_REV" >/dev/null 2>&1
+    git -C "$SHARED_TMP_DIR" checkout --detach "$UI_SHARED_REV" >/dev/null 2>&1
+  fi
   SHARED_DIR="$SHARED_TMP_DIR"
 fi
 

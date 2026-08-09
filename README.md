@@ -2,7 +2,7 @@
 
 Docker web interface for configuring a NUT server on a Proxmox host over SSH. It generates the NUT configuration and a shutdown script that stops Docker containers in the configured order when the battery timer expires or `LOWBATT` is reported, then shuts down the host.
 
-The header is imported from [mikrotik-ui-shared](https://github.com/ovikiss/mikrotik-ui-shared) during the Docker build. This app uses the shared Theme style, Font size and Language controls with a NUT/UPS mark instead of the MikroTik logo. Set `UI_SHARED_REPO` and `UI_SHARED_REF` as Docker build arguments to select another shared UI revision.
+The backend is a small static Go binary, suitable for both a Proxmox VM and MikroTik RouterOS containers. The image is published for `linux/arm/v7`, `linux/arm64` and `linux/amd64`. The header, translations, CSS and theme assets are imported from [mikrotik-ui-shared](https://github.com/ovikiss/mikrotik-ui-shared) during the Docker build. This app uses the shared Theme style, Font size and Language controls with a NUT/UPS mark instead of the MikroTik logo. Set `UI_SHARED_REPO`, `UI_SHARED_REF` or the exact `UI_SHARED_REV` build argument to select another shared UI revision.
 
 ## Getting started
 
