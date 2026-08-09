@@ -42,17 +42,17 @@ def save_config(value):
 def validate(value):
     errors = []
     for key in ("ssh_host", "ssh_user", "ups_name", "ups_driver"):
-        if not str(value.get(key, "")).strip(): errors.append(f"{key} este obligatoriu")
+        if not str(value.get(key, "")).strip(): errors.append(f"{key} is required")
     for key in ("battery_minutes", "low_battery_minutes", "stop_timeout"):
         try:
-            if int(value.get(key, 0)) < 0: errors.append(f"{key} trebuie să fie pozitiv")
-        except (TypeError, ValueError): errors.append(f"{key} trebuie să fie număr")
+            if int(value.get(key, 0)) < 0: errors.append(f"{key} must be positive")
+        except (TypeError, ValueError): errors.append(f"{key} must be a number")
     try:
         if int(value.get("low_battery_minutes", 0)) > int(value.get("battery_minutes", 0)):
-            errors.append("Pragul critică nu poate depăși timerul principal")
-        if not 1 <= int(value.get("ssh_port", 0)) <= 65535: errors.append("Port SSH invalid")
-    except (TypeError, ValueError): errors.append("Port SSH invalid")
-    if not isinstance(value.get("containers"), list): errors.append("Lista de containere este invalidă")
+            errors.append("The critical battery threshold cannot exceed the main timer")
+        if not 1 <= int(value.get("ssh_port", 0)) <= 65535: errors.append("Invalid SSH port")
+    except (TypeError, ValueError): errors.append("Invalid SSH port")
+    if not isinstance(value.get("containers"), list): errors.append("Invalid container list")
     return errors
 
 def connect(cfg):
