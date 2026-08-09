@@ -1,0 +1,171 @@
+name: housekeeping
+
+on:
+  workflow_run:
+    workflows: ["docker-publish"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Preview only (no deletions)"
+        type: boolean
+        required: true
+        default: true
+      keep_runs_per_ref:
+        description: "Completed runs to keep per workflow/ref"
+        type: string
+        required: true
+        default: "5"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+permissions:
+  contents: read
+  actions: write
+  packages: write
+
+jobs:
+  cleanup:
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Clean old Actions runs and untagged GHCR versions
+        env:
+          GH_TOKEN: ${{ secrets.GHCR_DELETE_TOKEN || secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          PACKAGE: ${{ github.event.repository.name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          KEEP_RUNS_PER_REF: ${{ inputs.keep_runs_per_ref }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          import urllib.error
+          import urllib.request
+          from collections import defaultdict
+          from datetime import datetime, timezone
+
+          owner = os.environ["OWNER"]
+          repo = os.environ["REPO"]
+          package = os.environ["PACKAGE"]
+          token = os.environ["GH_TOKEN"]
+          dry_run = os.environ.get("DRY_RUN", "false").lower() in {"1", "true", "yes", "on"}
+          keep_runs = max(1, int(os.environ.get("KEEP_RUNS_PER_REF") or "5"))
+          api_base = "https://api.github.com"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method, path, body=None):
+              url = path if path.startswith("http") else api_base + path
+              data = json.dumps(body).encode() if body is not None else None
+              req = urllib.request.Request(url, data=data, method=method, headers=headers)
+              try:
+                  with urllib.request.urlopen(req) as response:
+                      raw = response.read().decode()
+                      return json.loads(raw) if raw else None, response.headers
+              except urllib.error.HTTPError as error:
+                  detail = error.read().decode(errors="replace")
+                  raise RuntimeError(f"HTTP {error.code} {method} {url}: {detail}")
+
+          def paginate(path, key=None):
+              items, url = [], api_base + path
+              while url:
+                  payload, response_headers = request("GET", url)
+                  if key is None:
+                      items.extend(payload if isinstance(payload, list) else [])
+                  elif isinstance(payload, dict):
+                      items.extend(payload.get(key, []))
+                  url = None
+                  for link in response_headers.get("Link", "").split(","):
+                      if 'rel="next"' in link:
+                          url = link.split("<", 1)[1].split(">", 1)[0]
+                          break
+              return items
+
+          def delete_or_print(kind, identifier, path):
+              if dry_run:
+                  print(f"DRY-RUN delete {kind}: {identifier}")
+              else:
+                  request("DELETE", path)
+                  print(f"Deleted {kind}: {identifier}")
+
+          def protected_manifest_digests(image_ref):
+              result = subprocess.run(
+                  ["docker", "buildx", "imagetools", "inspect", "--raw", image_ref],
+                  text=True, capture_output=True, check=False,
+              )
+              if result.returncode != 0:
+                  print(f"WARN: cannot inspect {image_ref}: {result.stderr.strip()}")
+                  return set()
+              try:
+                  manifest = json.loads(result.stdout)
+              except json.JSONDecodeError:
+                  return set()
+              return {item.get("digest") for item in manifest.get("manifests", []) if item.get("digest")}
+
+          print("== Actions cleanup ==")
+          runs = paginate(f"/repos/{owner}/{repo}/actions/runs?per_page=100", "workflow_runs")
+          runs.sort(key=lambda item: item.get("created_at", ""), reverse=True)
+          keep_ids, groups = set(), defaultdict(int)
+          allowed_ref = re.compile(r"^(main|v\d+\.\d+(?:\.\d+)?)$")
+          for run in runs:
+              if run.get("status") != "completed":
+                  keep_ids.add(run["id"])
+                  continue
+              ref = run.get("head_branch", "")
+              group = (run.get("workflow_id"), ref)
+              if allowed_ref.match(ref) and groups[group] < keep_runs:
+                  keep_ids.add(run["id"])
+                  groups[group] += 1
+          for run in runs:
+              if run.get("status") == "completed" and run["id"] not in keep_ids:
+                  delete_or_print("Actions run", run["id"], f"/repos/{owner}/{repo}/actions/runs/{run['id']}")
+
+          print("== GHCR cleanup ==")
+          versions = paginate(f"/users/{owner}/packages/container/{package}/versions?per_page=100")
+          image_base = f"ghcr.io/{owner}/{package}"
+          protected = protected_manifest_digests(f"{image_base}:latest")
+          for version in versions:
+              tags = ((version.get("metadata") or {}).get("container") or {}).get("tags") or []
+              for tag in tags:
+                  if re.fullmatch(r"v\d+\.\d+(?:\.\d+)?", tag):
+                      protected.update(protected_manifest_digests(f"{image_base}:{tag}"))
+          untagged = []
+          for version in versions:
+              tags = ((version.get("metadata") or {}).get("container") or {}).get("tags") or []
+              if tags:
+                  continue
+              created = version.get("created_at")
+              try:
+                  created_at = datetime.fromisoformat(created.replace("Z", "+00:00"))
+              except Exception:
+                  continue
+              untagged.append((version, created_at))
+          untagged.sort(key=lambda item: item[1], reverse=True)
+          now = datetime.now(timezone.utc)
+          for index, (version, created_at) in enumerate(untagged):
+              if version.get("name") in protected:
+                  continue
+              if index < 20 or (now - created_at).total_seconds() < 48 * 3600:
+                  continue
+              delete_or_print("GHCR version", version["id"], f"/users/{owner}/packages/container/{package}/versions/{version['id']}")
+          print("Housekeeping complete.")
+          PY
