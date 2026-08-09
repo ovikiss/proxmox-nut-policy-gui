@@ -22,3 +22,7 @@ Deschide `http://IP-ul-mașinii-care-rulează-aplicația:8080`. Completează hos
 - Aplicarea activează sau repornește `nut-server` și `nut-monitor`; testează întâi într-o fereastră de mentenanță.
 
 Configurația presupune că UPS-ul CyberPower este conectat USB la hostul Proxmox și că `usbhid-ups` este instalat.
+
+## Preview
+
+![Proxmox UPS GUI](proxmox-ups-gui-screenshot.jpg)
