@@ -1,0 +1,10 @@
+services:
+  proxmox-nut-gui:
+    build: .
+    container_name: proxmox-nut-gui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - ${SSH_DIR:-~/.ssh}:/root/.ssh:ro
