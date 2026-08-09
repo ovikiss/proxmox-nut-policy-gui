@@ -13,6 +13,15 @@ mkdir -p data
 docker compose up -d --build
 ```
 
+For a minimal installation using the published `v1.0` image, copy `docker-compose.minimal.yml` to `docker-compose.yml` or run:
+
+```sh
+mkdir -p data
+docker compose -f docker-compose.minimal.yml up -d
+```
+
+Then open the GUI and enter the Proxmox SSH and NUT settings. They are saved in `./data/settings.json`.
+
 Open `http://IP-of-the-machine-running-the-app:8080`. Configure the host and UPS, then use **Refresh VMs** to load the current QEMU/LXC inventory from Proxmox. Select the guests and configure their timing before testing and deploying.
 
 All connection, NUT, shutdown policy and VM settings are persisted in `/data/settings.json`. The app can read the legacy `/data/config.json` file during migration.
