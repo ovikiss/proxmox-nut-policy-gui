@@ -1,6 +1,34 @@
 services:
   proxmox-nut-gui:
-    build: .
+    build:
+      context: .
+      args:
+        UI_SHARED_REPO: ${UI_SHARED_REPO:-https://github.com/ovikiss/mikrotik-ui-shared.git}
+        UI_SHARED_REF: ${UI_SHARED_REF:-main}
+    environment:
+      PROXMOX_SSH_HOST: ${PROXMOX_SSH_HOST:-}
+      PROXMOX_SSH_PORT: ${PROXMOX_SSH_PORT:-}
+      PROXMOX_SSH_USER: ${PROXMOX_SSH_USER:-}
+      PROXMOX_SSH_AUTH_METHOD: ${PROXMOX_SSH_AUTH_METHOD:-}
+      PROXMOX_SSH_KEY: ${PROXMOX_SSH_KEY:-}
+      PROXMOX_SSH_PASSWORD: ${PROXMOX_SSH_PASSWORD:-}
+      PROXMOX_SSH_KNOWN_HOSTS: ${PROXMOX_SSH_KNOWN_HOSTS:-}
+      UPS_HOST: ${UPS_HOST:-}
+      UPS_PORT: ${UPS_PORT:-}
+      UPS_NAME: ${UPS_NAME:-}
+      UPS_DRIVER: ${UPS_DRIVER:-}
+      UPS_DESCRIPTION: ${UPS_DESCRIPTION:-}
+      NUT_USER: ${NUT_USER:-}
+      NUT_PASSWORD: ${NUT_PASSWORD:-}
+      UPSMON_PASSWORD: ${UPSMON_PASSWORD:-}
+      BATTERY_MINUTES: ${BATTERY_MINUTES:-}
+      LOW_BATTERY_MINUTES: ${LOW_BATTERY_MINUTES:-}
+      STOP_TIMEOUT: ${STOP_TIMEOUT:-}
+      SHUTDOWN_COMMAND: ${SHUTDOWN_COMMAND:-}
+      CONTAINERS_JSON: ${CONTAINERS_JSON:-}
+      UI_LANGUAGE: ${UI_LANGUAGE:-}
+      UI_THEME_STYLE: ${UI_THEME_STYLE:-}
+      UI_FONT_SIZE: ${UI_FONT_SIZE:-}
     container_name: proxmox-nut-gui
     restart: unless-stopped
     ports:
