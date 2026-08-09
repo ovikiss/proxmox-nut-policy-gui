@@ -7,11 +7,26 @@
   <style>
     :root{--ups-accent:#73a7ff;--ups-green:#35d98b}.dashboard-container{max-width:1340px;margin:0 auto;padding:30px 52px 40px}.section{margin-top:20px}.ups-card{background:var(--card);border:1px solid var(--border);border-radius:15px;padding:17px;box-shadow:var(--glass-shadow,var(--shadow))}.ups-connection{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.ups-connection h2{grid-column:1/-1}.ups-connection label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:13px}.ups-connection input,.ups-connection textarea{background:var(--card-strong);border:1px solid var(--border);border-radius:8px;color:var(--text);padding:9px 10px;font:inherit}.ups-connection textarea{min-height:90px;resize:vertical}.ups-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}.ups-stat{height:119px}.ups-label{font-size:14px;color:var(--muted);text-transform:uppercase}.ups-value{font-size:33px;font-weight:700;margin-top:16px}.ups-policy{display:flex;align-items:center;gap:34px;min-height:119px}.ups-policy h2{margin-right:auto}.ups-policy p{margin:0;font-size:18px}.ups-input{width:76px;background:var(--card-strong);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:16px;padding:8px 12px;text-align:center}.ups-vm-card{padding:16px 17px 12px}.ups-card h2{font-size:22px;margin:0 0 10px}.ups-table-head,.ups-vm-row{display:grid;grid-template-columns:78px 1.6fr 180px 175px 170px;gap:15px;align-items:center}.ups-table-head{color:var(--muted);padding:0 3px 7px;border-bottom:1px solid var(--table-border,var(--border))}.ups-vm-row{min-height:74px;border-bottom:1px solid var(--table-border,var(--border))}.ups-vm-row:last-of-type{border-bottom:0}.ups-vm-name{font-size:17px}.ups-vm-meta{color:var(--muted);font-size:14px;margin-top:3px}.ups-status.running{color:var(--ups-green)}.ups-status.stopped{color:var(--muted)}.ups-check{appearance:none;width:22px;height:22px;border:1px solid #3d4655;border-radius:5px;background:var(--card-strong);position:relative;margin-left:8px}.ups-check:checked{border-color:var(--ups-accent)}.ups-check:checked:after{content:"✓";position:absolute;color:var(--ups-accent);font-size:20px;left:3px;top:-3px}.ups-field{display:flex;align-items:center;gap:12px}.ups-field .ups-input{width:77px}.ups-actions{display:flex;align-items:center;gap:14px;padding-top:17px}.ups-actions button{border:0;border-radius:8px;padding:12px 24px;font-size:16px;font-weight:700;cursor:pointer;background:#27303f;color:var(--text)}.ups-actions button.primary{background:var(--ups-accent);color:#071426}.ups-actions button:disabled{opacity:.6;cursor:wait}.ups-result{color:var(--muted);margin-left:2px}.ups-notice{min-height:94px}.ups-notice p{color:var(--muted);font-size:17px;margin:0}@media(max-width:900px){.dashboard-container{padding:24px 18px}.ups-connection,.ups-stats{grid-template-columns:repeat(2,1fr)}.ups-table-head{display:none}.ups-vm-row{grid-template-columns:42px 1fr 130px 140px;gap:8px}.ups-vm-row>.timeout{grid-column:3}.ups-vm-row>.ups-status{grid-column:2}.ups-policy{flex-wrap:wrap;gap:14px}}@media(max-width:600px){.ups-connection,.ups-stats{grid-template-columns:1fr}.ups-vm-row{grid-template-columns:32px 1fr}.ups-vm-row>.ups-status,.ups-vm-row>.schedule,.ups-vm-row>.timeout{grid-column:2}.ups-actions{flex-wrap:wrap}}
   </style>
+  <style>
+    body.ups-app{max-width:none;margin:0 auto;padding:38px 60px 48px;box-sizing:border-box;overflow-x:hidden}
+    body.ups-app .ups-connections{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:26px;margin-top:30px}
+    body.ups-app .ups-connections .ups-section{margin-top:0}
+    body.ups-app .ups-card{padding:22px}
+    body.ups-app .ups-connection{min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:17px 18px}
+    body.ups-app .ups-connection h2{font-size:20px}
+    body.ups-app .ups-connection textarea{grid-column:1/-1}
+    body.ups-app > .ups-section{margin-top:26px}
+    body.ups-app .ups-stats{margin-top:26px}
+    body.ups-app .ups-vm-card{padding:22px 22px 17px}
+    body.ups-app .ups-notice{min-height:110px}
+    @media(max-width:900px){body.ups-app{padding:28px 18px 36px}body.ups-app .ups-connections{grid-template-columns:1fr;gap:20px}body.ups-app .ups-connection{gap:14px}}
+  </style>
 </head>
-<body class="dashboard-container">
+<body class="ups-app">
   <header class="topbar" data-mikrotik-header-root data-brand="nut" data-brand-text="Proxmox UPS GUI" data-brand-version="v1.0" data-subtitle="192.168.88.120 · NUT: cyberpower"></header>
 
-  <section class="ups-card ups-connection section">
+  <div class="ups-connections">
+  <section class="ups-card ups-connection ups-section">
     <h2 data-i18n="proxmoxConnection">Proxmox / SSH</h2>
     <label><span data-i18n="sshHost">Proxmox SSH host</span><input id="ssh-host" value="192.168.88.120"></label>
     <label><span data-i18n="sshPort">SSH port</span><input id="ssh-port" type="number" min="1" max="65535" value="22"></label>
@@ -21,7 +36,7 @@
     <label><span data-i18n="sshPassword">SSH password</span><input id="ssh-password" type="password" autocomplete="new-password" placeholder="••••••••"></label>
   </section>
 
-  <section class="ups-card ups-connection section">
+  <section class="ups-card ups-connection ups-section">
     <h2 data-i18n="nutConnection">NUT / UPS</h2>
     <label><span data-i18n="upsHost">UPS/NUT host</span><input id="ups-host" value="127.0.0.1"></label>
     <label><span data-i18n="upsPort">UPS/NUT port</span><input id="ups-port" type="number" min="1" max="65535" value="3493"></label>
@@ -29,11 +44,12 @@
     <label><span data-i18n="nutUser">NUT user</span><input id="nut-user" value="nutmon"></label>
     <label><span data-i18n="nutPassword">NUT password</span><input id="nut-password" type="password" autocomplete="new-password" placeholder="••••••••"></label>
   </section>
+  </div>
 
-  <section class="ups-stats section"><div class="ups-card ups-stat"><div class="ups-label" data-i18n="upsStatus">UPS status</div><div class="ups-value">OL</div></div><div class="ups-card ups-stat"><div class="ups-label" data-i18n="battery">Battery</div><div class="ups-value">100%</div></div><div class="ups-card ups-stat"><div class="ups-label" data-i18n="autonomy">Autonomy</div><div class="ups-value">31.4 min</div></div><div class="ups-card ups-stat"><div class="ups-label" data-i18n="loadUps">UPS load</div><div class="ups-value">18%</div></div></section>
-  <section class="ups-card ups-policy section"><h2 data-i18n="shutdownPolicy">Shutdown policy</h2><p><span data-i18n="shutdownWith">Shut down Proxmox with</span> <input class="ups-input" id="battery-minutes" type="number" min="0" value="5"> <span data-i18n="minutesRemaining">minutes remaining</span></p><p><span data-i18n="checkEvery">Check every</span> <input class="ups-input" id="poll-seconds" type="number" min="1" value="20"> <span data-i18n="seconds">seconds</span></p></section>
-  <section class="ups-card ups-vm-card section"><h2 data-i18n="vms">VMs</h2><div class="ups-table-head"><div data-i18n="active">Active</div><div data-i18n="vm">VM</div><div data-i18n="status">Status</div><div data-i18n="shutdownAt">Shutdown at</div><div data-i18n="timeout">Timeout</div></div><div id="vm-list"></div><div class="ups-actions"><button class="primary" id="deploy" data-i18n="saveDeploy">Save &amp; Deploy</button><button id="test" data-i18n="testPolicy">Test policy</button><span class="ups-result" id="result" data-i18n="lastDeploy">Last deploy: OK</span></div></section>
-  <section class="ups-card ups-notice section"><h2 data-i18n="failSafe">Fail-safe</h2><p data-i18n="failSafeText">The rule runs directly on Proxmox through systemd. If the Docker VM stops, UPS shutdown continues independently.</p></section>
+  <section class="ups-stats ups-section"><div class="ups-card ups-stat"><div class="ups-label" data-i18n="upsStatus">UPS status</div><div class="ups-value">OL</div></div><div class="ups-card ups-stat"><div class="ups-label" data-i18n="battery">Battery</div><div class="ups-value">100%</div></div><div class="ups-card ups-stat"><div class="ups-label" data-i18n="autonomy">Autonomy</div><div class="ups-value">31.4 min</div></div><div class="ups-card ups-stat"><div class="ups-label" data-i18n="loadUps">UPS load</div><div class="ups-value">18%</div></div></section>
+  <section class="ups-card ups-policy ups-section"><h2 data-i18n="shutdownPolicy">Shutdown policy</h2><p><span data-i18n="shutdownWith">Shut down Proxmox with</span> <input class="ups-input" id="battery-minutes" type="number" min="0" value="5"> <span data-i18n="minutesRemaining">minutes remaining</span></p><p><span data-i18n="checkEvery">Check every</span> <input class="ups-input" id="poll-seconds" type="number" min="1" value="20"> <span data-i18n="seconds">seconds</span></p></section>
+  <section class="ups-card ups-vm-card ups-section"><h2 data-i18n="vms">VMs</h2><div class="ups-table-head"><div data-i18n="active">Active</div><div data-i18n="vm">VM</div><div data-i18n="status">Status</div><div data-i18n="shutdownAt">Shutdown at</div><div data-i18n="timeout">Timeout</div></div><div id="vm-list"></div><div class="ups-actions"><button class="primary" id="deploy" data-i18n="saveDeploy">Save &amp; Deploy</button><button id="test" data-i18n="testPolicy">Test policy</button><span class="ups-result" id="result" data-i18n="lastDeploy">Last deploy: OK</span></div></section>
+  <section class="ups-card ups-notice ups-section"><h2 data-i18n="failSafe">Fail-safe</h2><p data-i18n="failSafeText">The rule runs directly on Proxmox through systemd. If the Docker VM stops, UPS shutdown continues independently.</p></section>
 
   <script src="/common/header.js"></script>
   <script>
