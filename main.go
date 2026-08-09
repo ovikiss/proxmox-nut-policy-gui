@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -173,6 +174,13 @@ func intValue(config map[string]any, key string, fallback int) int {
 	return fallback
 }
 
+func enabledValue(config map[string]any) bool {
+	if value, ok := config["enabled"].(bool); ok {
+		return value
+	}
+	return stringValue(config, "status", "running") != "stopped"
+}
+
 func validate(config map[string]any) []string {
 	errorsList := []string{}
 	for _, key := range []string{"ssh_host", "ssh_user", "ups_name", "ups_driver"} {
@@ -252,6 +260,34 @@ func runRemote(client *ssh.Client, command string) (string, error) {
 	return strings.TrimSpace(string(output)), err
 }
 
+func proxmoxVMs(client *ssh.Client) ([]map[string]any, error) {
+	output, err := runRemote(client, "pvesh get /cluster/resources --type vm --output-format json 2>/dev/null")
+	if err != nil {
+		return nil, fmt.Errorf("could not query Proxmox VMs: %w: %s", err, output)
+	}
+	var resources []map[string]any
+	if err := json.Unmarshal([]byte(output), &resources); err != nil {
+		return nil, fmt.Errorf("Proxmox returned invalid VM data: %w", err)
+	}
+	result := make([]map[string]any, 0, len(resources))
+	for _, resource := range resources {
+		if resource["vmid"] == nil || (resource["type"] != "qemu" && resource["type"] != "lxc") {
+			continue
+		}
+		result = append(result, map[string]any{
+			"vmid":   resource["vmid"],
+			"type":   resource["type"],
+			"node":   resource["node"],
+			"name":   stringValue(resource, "name", fmt.Sprintf("VM %v", resource["vmid"])),
+			"status": stringValue(resource, "status", "unknown"),
+		})
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return intValue(result[i], "vmid", 0) < intValue(result[j], "vmid", 0)
+	})
+	return result, nil
+}
+
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 func remoteFiles(config map[string]any) map[string]string {
@@ -267,9 +303,16 @@ func remoteFiles(config map[string]any) map[string]string {
 	if containers, ok := config["containers"].([]any); ok {
 		for _, raw := range containers {
 			if item, ok := raw.(map[string]any); ok {
-				containerName := stringValue(item, "name", "")
-				if containerName != "" {
-					commands = append(commands, fmt.Sprintf("docker stop -t %d %s || true", intValue(item, "timeout", timeout), shellQuote(containerName)))
+				if !enabledValue(item) {
+					continue
+				}
+				vmid := intValue(item, "vmid", 0)
+				if vmid > 0 {
+					stopCommand := "qm"
+					if stringValue(item, "type", "qemu") == "lxc" {
+						stopCommand = "pct"
+					}
+					commands = append(commands, fmt.Sprintf("%s shutdown %d --timeout %d || true", stopCommand, vmid, intValue(item, "timeout", timeout)))
 					if delay := intValue(item, "delay", 0); delay > 0 {
 						commands = append(commands, fmt.Sprintf("sleep %d", delay))
 					}
@@ -280,12 +323,12 @@ func remoteFiles(config map[string]any) map[string]string {
 	commands = append(commands, stringValue(config, "shutdown_command", "shutdown -h now"))
 	nutUser, nutPassword := stringValue(config, "nut_user", "nutmon"), stringValue(config, "nut_password", "change-this")
 	return map[string]string{
-		"/etc/nut/ups.conf":                   fmt.Sprintf("[%s]\n  driver = %s\n  port = %s\n  desc = %s\n", name, stringValue(config, "ups_driver", "usbhid-ups"), driverPort, stringValue(config, "ups_description", "CyberPower UPS")),
-		"/etc/nut/upsd.users":                 fmt.Sprintf("[%s]\n  password = %s\n  upsmon master\n", nutUser, nutPassword),
-		"/etc/nut/upsmon.conf":                fmt.Sprintf("MONITOR %s 1 %s %s master\nMINSUPPLIES 1\nSHUTDOWNCMD \"/usr/local/sbin/nut-docker-shutdown\"\nPOWERDOWNFLAG /etc/killpower\nPOLLFREQ 5\nPOLLFREQALERT 5\nHOSTSYNC 15\nDEADTIME 15\nFINALDELAY 5\nNOTIFYCMD /usr/sbin/upssched\nNOTIFYFLAG ONLINE SYSLOG+EXEC\nNOTIFYFLAG ONBATT SYSLOG+EXEC\nNOTIFYFLAG LOWBATT SYSLOG+EXEC\nNOTIFYFLAG FSD SYSLOG+EXEC\n", monitorTarget, nutUser, nutPassword),
-		"/etc/nut/upssched.conf":              fmt.Sprintf("CMDSCRIPT /usr/local/sbin/nut-upssched-cmd\nPIPEFN /run/nut/upssched.pipe\nLOCKFN /run/nut/upssched.lock\nAT ONBATT * START-TIMER onbatt %d\nAT ONLINE * CANCEL-TIMER onbatt\nAT LOWBATT * EXECUTE lowbatt\nAT FSD * EXECUTE fsd\n", minutes*60),
-		"/usr/local/sbin/nut-docker-shutdown": "#!/bin/sh\nset -eu\n" + strings.Join(commands, "\n") + "\n",
-		"/usr/local/sbin/nut-upssched-cmd":    "#!/bin/sh\ncase \"$1\" in\n  onbatt|lowbatt|fsd) exec /usr/local/sbin/nut-docker-shutdown ;;\n  *) exit 0 ;;\nesac\n",
+		"/etc/nut/ups.conf":                    fmt.Sprintf("[%s]\n  driver = %s\n  port = %s\n  desc = %s\n", name, stringValue(config, "ups_driver", "usbhid-ups"), driverPort, stringValue(config, "ups_description", "CyberPower UPS")),
+		"/etc/nut/upsd.users":                  fmt.Sprintf("[%s]\n  password = %s\n  upsmon master\n", nutUser, nutPassword),
+		"/etc/nut/upsmon.conf":                 fmt.Sprintf("MONITOR %s 1 %s %s master\nMINSUPPLIES 1\nSHUTDOWNCMD \"/usr/local/sbin/nut-proxmox-shutdown\"\nPOWERDOWNFLAG /etc/killpower\nPOLLFREQ 5\nPOLLFREQALERT 5\nHOSTSYNC 15\nDEADTIME 15\nFINALDELAY 5\nNOTIFYCMD /usr/sbin/upssched\nNOTIFYFLAG ONLINE SYSLOG+EXEC\nNOTIFYFLAG ONBATT SYSLOG+EXEC\nNOTIFYFLAG LOWBATT SYSLOG+EXEC\nNOTIFYFLAG FSD SYSLOG+EXEC\n", monitorTarget, nutUser, nutPassword),
+		"/etc/nut/upssched.conf":               fmt.Sprintf("CMDSCRIPT /usr/local/sbin/nut-upssched-cmd\nPIPEFN /run/nut/upssched.pipe\nLOCKFN /run/nut/upssched.lock\nAT ONBATT * START-TIMER onbatt %d\nAT ONLINE * CANCEL-TIMER onbatt\nAT LOWBATT * EXECUTE lowbatt\nAT FSD * EXECUTE fsd\n", minutes*60),
+		"/usr/local/sbin/nut-proxmox-shutdown": "#!/bin/sh\nset -eu\n" + strings.Join(commands, "\n") + "\n",
+		"/usr/local/sbin/nut-upssched-cmd":     "#!/bin/sh\ncase \"$1\" in\n  onbatt|lowbatt|fsd) exec /usr/local/sbin/nut-proxmox-shutdown ;;\n  *) exit 0 ;;\nesac\n",
 	}
 }
 
@@ -409,6 +452,23 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			jsonResponse(w, 200, map[string]any{"ok": true, "output": output})
+			return
+		}
+	case "/api/proxmox/vms":
+		if r.Method == http.MethodGet {
+			config := loadConfig()
+			client, err := sshClient(config)
+			if err != nil {
+				jsonResponse(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			defer client.Close()
+			vms, err := proxmoxVMs(client)
+			if err != nil {
+				jsonResponse(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "vms": vms})
 			return
 		}
 	case "/api/apply":
