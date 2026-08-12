@@ -1,8 +1,8 @@
 {
-  "order": ["themeStyle", "fontSize", "language"],
+  "order": ["themeStyle", "theme", "fontSize", "language"],
   "enabled": {
     "themeStyle": true,
-    "theme": false,
+    "theme": true,
     "fontSize": true,
     "pollInterval": false,
     "language": true
