@@ -24,8 +24,9 @@ else
 fi
 
 mkdir -p "$ROOT_DIR/static"
-cp -R "$SHARED_DIR/ui/common" "$ROOT_DIR/static/common"
-cp -R "$SHARED_DIR/ui/images" "$ROOT_DIR/static/images"
-cp -R "$SHARED_DIR/ui/i18n" "$ROOT_DIR/static/i18n"
+mkdir -p "$ROOT_DIR/static/common" "$ROOT_DIR/static/images" "$ROOT_DIR/static/i18n"
+cp -R "$SHARED_DIR/ui/common/." "$ROOT_DIR/static/common/"
+cp -R "$SHARED_DIR/ui/images/." "$ROOT_DIR/static/images/"
+cp -R "$SHARED_DIR/ui/i18n/." "$ROOT_DIR/static/i18n/"
 cp "$SHARED_DIR/ui/css/style-modern.css" "$ROOT_DIR/static/styles-modern.css"
 echo "Synced shared UI from $SHARED_DIR"
