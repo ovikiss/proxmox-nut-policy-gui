@@ -1,0 +1,14 @@
+[Unit]
+Description=Proxmox NUT policy daemon
+After=nut-server.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/nut-proxmox-policy-daemon
+Restart=always
+RestartSec=5
+User=root
+
+[Install]
+WantedBy=multi-user.target
