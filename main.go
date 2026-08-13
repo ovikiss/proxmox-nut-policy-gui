@@ -24,7 +24,7 @@ var version = "dev"
 var defaults = map[string]any{
 	"ssh_host": "192.168.88.120", "ssh_port": 22, "ssh_user": "root", "ssh_auth_method": "key",
 	"ssh_key": "", "ssh_password": "", "ssh_known_hosts": "",
-	"stop_timeout": 30,
+	"stop_timeout":     30,
 	"shutdown_command": "shutdown -h now", "containers": []any{},
 }
 
@@ -339,7 +339,7 @@ func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'
 
 func remoteFiles(config map[string]any) map[string]string {
 	timeout := intValue(config, "stop_timeout", 30)
-	commands := []string{}
+	guestCommands := strings.Builder{}
 	if containers, ok := config["containers"].([]any); ok {
 		for _, raw := range containers {
 			if item, ok := raw.(map[string]any); ok {
@@ -352,19 +352,230 @@ func remoteFiles(config map[string]any) map[string]string {
 					if stringValue(item, "type", "qemu") == "lxc" {
 						stopCommand = "pct"
 					}
-					commands = append(commands, fmt.Sprintf("%s shutdown %d --timeout %d --forceStop 1 || true", stopCommand, vmid, intValue(item, "timeout", timeout)))
+					guestTimeout := intValue(item, "timeout", timeout)
+					guestCommands.WriteString(fmt.Sprintf("capture_guest %s %d\n", stopCommand, vmid))
+					guestCommands.WriteString(fmt.Sprintf("shutdown_guest %s %d %d\n", stopCommand, vmid, guestTimeout))
 					if delay := intValue(item, "delay", 0); delay > 0 {
-						commands = append(commands, fmt.Sprintf("sleep %d", delay))
+						guestCommands.WriteString(fmt.Sprintf("sleep %d\n", delay))
 					}
 				}
 			}
 		}
 	}
-	commands = append(commands, stringValue(config, "shutdown_command", "shutdown -h now"))
+	hostShutdown := stringValue(config, "shutdown_command", "shutdown -h now")
+	nutHost := stringValue(config, "ssh_host", "127.0.0.1")
+	shutdownScript := fmt.Sprintf(`#!/bin/sh
+set -u
+
+LOG_FILE=/var/log/nut-proxmox-shutdown.log
+STATE_FILE=/var/lib/nut-proxmox-running.state
+LOCK_DIR=/run/nut-proxmox-shutdown.lock
+GRACE_PERIOD=180
+NUT_HOST=%s
+
+log_message() {
+  message="$1"
+  mkdir -p "$(dirname "$LOG_FILE")"
+  printf '[%%s] %%s\n' "$(date -Is)" "$message" >>"$LOG_FILE"
+  logger -t nut-proxmox-shutdown -- "$message" 2>/dev/null || true
+}
+
+ups_status() {
+  ups_name=$(upsc -l "$NUT_HOST" 2>/dev/null | awk 'NR==1 {print $1; exit}')
+  if [ -z "$ups_name" ]; then
+    printf 'UNKNOWN\n'
+    return 0
+  fi
+  upsc "$ups_name@$NUT_HOST" ups.status 2>/dev/null || printf 'UNKNOWN\n'
+}
+
+power_online() {
+  case "$(ups_status)" in
+    *OL*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+guest_running() {
+  kind="$1"
+  vmid="$2"
+  if [ "$kind" = qm ]; then
+    qm status "$vmid" 2>/dev/null | grep -q 'status: running'
+  else
+    pct status "$vmid" 2>/dev/null | grep -q 'status: running'
+  fi
+}
+
+capture_guest() {
+  kind="$1"
+  vmid="$2"
+  if guest_running "$kind" "$vmid"; then
+    printf '%%s:%%s\n' "$kind" "$vmid" >>"$STATE_FILE"
+    log_message "Captured running $kind $vmid"
+  fi
+}
+
+shutdown_guest() {
+  kind="$1"
+  vmid="$2"
+  timeout="$3"
+  if guest_running "$kind" "$vmid"; then
+    log_message "Gracefully shutting down $kind $vmid (timeout ${timeout}s)"
+    "$kind" shutdown "$vmid" --timeout "$timeout" --forceStop 1 || true
+  else
+    log_message "$kind $vmid is already stopped"
+  fi
+}
+
+restore_guest() {
+  kind="$1"
+  vmid="$2"
+  if guest_running "$kind" "$vmid"; then
+    log_message "$kind $vmid is already running"
+    return 0
+  fi
+  log_message "Restoring $kind $vmid because power returned"
+  "$kind" start "$vmid" || log_message "Could not restore $kind $vmid"
+}
+
+restore_state() {
+  if [ ! -s "$STATE_FILE" ]; then
+    log_message "No captured running guests to restore"
+    return 0
+  fi
+  while IFS=: read -r kind vmid; do
+    [ -n "$kind" ] && [ -n "$vmid" ] && restore_guest "$kind" "$vmid"
+  done <"$STATE_FILE"
+  rm -f "$STATE_FILE"
+}
+
+run_shutdown() {
+  mode="${1:-immediate}"
+  if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    if [ "$mode" = immediate ]; then
+      : >"$LOCK_DIR/force"
+      log_message "Immediate shutdown requested while grace period is active"
+    fi
+    return 0
+  fi
+  trap 'rm -rf "$LOCK_DIR"' EXIT
+  mkdir -p "$(dirname "$STATE_FILE")"
+
+  if [ "$mode" = onbatt ]; then
+    log_message "Power failure detected; waiting ${GRACE_PERIOD}s for power restoration"
+    elapsed=0
+    while [ "$elapsed" -lt "$GRACE_PERIOD" ]; do
+      if [ -e "$LOCK_DIR/force" ]; then
+        log_message "Immediate NUT event received; skipping grace period"
+        break
+      fi
+      if power_online; then
+        log_message "Power restored during grace period; canceling shutdown"
+        return 0
+      fi
+      sleep 1
+      elapsed=$((elapsed + 1))
+    done
+  fi
+
+  : >"$STATE_FILE"
+  log_message "Saving running guest state"
+  %s
+  log_message "Executing configured guest shutdowns"
+  %s
+  sync
+
+  if [ "$mode" = onbatt ] && [ ! -e "$LOCK_DIR/force" ] && power_online; then
+    log_message "Power restored after guest shutdown; restoring captured guests"
+    restore_state
+    return 0
+  fi
+
+  log_message "Power remains unavailable; shutting down Proxmox host"
+  sync
+  %s
+}
+
+case "${1:-immediate}" in
+  onbatt) run_shutdown onbatt ;;
+  immediate) run_shutdown immediate ;;
+  *) log_message "Ignoring unknown shutdown mode: $1"; exit 1 ;;
+esac
+`, shellQuote(nutHost), guestCommandsForCapture(guestCommands.String()), guestCommandsForShutdown(guestCommands.String()), hostShutdown)
+	handlerScript := `#!/bin/sh
+set -u
+LOG_FILE=/var/log/nut-proxmox-shutdown.log
+LOCK_DIR=/run/nut-proxmox-shutdown.lock
+log_message() {
+  mkdir -p "$(dirname "$LOG_FILE")"
+  printf '[%s] %s\n' "$(date -Is)" "$1" >>"$LOG_FILE"
+  logger -t nut-proxmox-shutdown -- "$1" 2>/dev/null || true
+}
+case "${1:-}" in
+  online)
+    log_message "NUT ONLINE received"
+    ;;
+  onbatt)
+    log_message "NUT ONBATT received"
+    nohup /usr/local/sbin/nut-proxmox-shutdown onbatt >/dev/null 2>&1 &
+    ;;
+  lowbatt|fsd)
+    log_message "NUT $1 received"
+    if [ -d "$LOCK_DIR" ]; then
+      : >"$LOCK_DIR/force"
+    else
+      nohup /usr/local/sbin/nut-proxmox-shutdown immediate >/dev/null 2>&1 &
+    fi
+    ;;
+  *)
+    log_message "Ignoring unknown NUT event: $1"
+    ;;
+esac
+`
 	return map[string]string{
-		"/usr/local/sbin/nut-proxmox-shutdown": "#!/bin/sh\nset -eu\n" + strings.Join(commands, "\n") + "\n",
-		"/usr/local/sbin/nut-upssched-cmd":     "#!/bin/sh\ncase \"$1\" in\n  onbatt|lowbatt|fsd) exec /usr/local/sbin/nut-proxmox-shutdown ;;\n  *) exit 0 ;;\nesac\n",
+		"/usr/local/sbin/nut-proxmox-shutdown": shutdownScript,
+		"/usr/local/sbin/nut-upssched-cmd":     handlerScript,
+		"/etc/nut/upssched.conf": `CMDSCRIPT /usr/local/sbin/nut-upssched-cmd
+PIPEFN /run/nut/upssched.pipe
+LOCKFN /run/nut/upssched.lock
+
+AT ONBATT * EXECUTE onbatt
+AT ONLINE * EXECUTE online
+AT LOWBATT * EXECUTE lowbatt
+AT FSD * EXECUTE fsd
+`,
 	}
+}
+
+func validateGeneratedPolicy(config map[string]any) error {
+	for name, content := range remoteFiles(config) {
+		if strings.TrimSpace(content) == "" {
+			return fmt.Errorf("%s: generated script is empty", filepath.Base(name))
+		}
+	}
+	return nil
+}
+
+func guestCommandsForCapture(commands string) string {
+	lines := strings.Split(strings.TrimSpace(commands), "\n")
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.HasPrefix(line, "capture_guest ") {
+			result = append(result, line)
+		}
+	}
+	return strings.Join(result, "\n")
+}
+
+func guestCommandsForShutdown(commands string) string {
+	lines := strings.Split(strings.TrimSpace(commands), "\n")
+	result := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if !strings.HasPrefix(line, "capture_guest ") {
+			result = append(result, line)
+		}
+	}
+	return strings.Join(result, "\n")
 }
 
 func writeRemote(client *ssh.Client, files map[string]string) (string, error) {
@@ -501,6 +712,20 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			jsonResponse(w, 200, map[string]any{"ok": true, "output": output})
+			return
+		}
+	case "/api/test-policy":
+		if r.Method == http.MethodPost {
+			config := mergeConfig(decodeBody(r))
+			if errorsList := validate(config); len(errorsList) > 0 {
+				jsonResponse(w, http.StatusBadRequest, map[string]any{"ok": false, "errors": errorsList})
+				return
+			}
+			if err := validateGeneratedPolicy(config); err != nil {
+				jsonResponse(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "message": "policy syntax and lifecycle checks passed"})
 			return
 		}
 	case "/api/proxmox/vms":
