@@ -21,8 +21,11 @@ func TestRemoteFilesIncludeNutShutdownLifecycle(t *testing.T) {
 		"/var/log/nut-proxmox-shutdown.log",
 		"/var/lib/nut-proxmox-running.state",
 		"GRACE_PERIOD=180",
+		"ups_runtime_seconds()",
+		"wait_for_runtime()",
 		"capture_guest qm 100",
 		"capture_guest pct 200",
+		"wait_for_runtime 0",
 		"--timeout \"$timeout\" --forceStop 1",
 		"restore_state",
 		"NUT_HOST='10.0.0.5'",
@@ -31,6 +34,9 @@ func TestRemoteFilesIncludeNutShutdownLifecycle(t *testing.T) {
 		if !strings.Contains(shutdown, expected) {
 			t.Fatalf("shutdown script does not contain %q", expected)
 		}
+	}
+	if strings.Contains(shutdown, "sleep 5\nshutdown_guest") || strings.Contains(shutdown, "sleep 300\n") {
+		t.Fatalf("shutdown policy must wait for UPS runtime thresholds, not fixed inter-VM delays")
 	}
 	for _, expected := range []string{
 		"onbatt)",

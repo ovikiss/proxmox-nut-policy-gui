@@ -342,8 +342,14 @@ upsc "${ups_name}@%s:%d" 2>/dev/null
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 func remoteFiles(config map[string]any) map[string]string {
-	timeout := intValue(config, "stop_timeout", 30)
-	guestCommands := strings.Builder{}
+	timeout := intValue(config, "stop_timeout", 180)
+	type shutdownStep struct {
+		stopCommand string
+		vmid        int
+		timeout     int
+		threshold   int
+	}
+	steps := []shutdownStep{}
 	if containers, ok := config["containers"].([]any); ok {
 		for _, raw := range containers {
 			if item, ok := raw.(map[string]any); ok {
@@ -357,14 +363,25 @@ func remoteFiles(config map[string]any) map[string]string {
 						stopCommand = "pct"
 					}
 					guestTimeout := intValue(item, "timeout", timeout)
-					guestCommands.WriteString(fmt.Sprintf("capture_guest %s %d\n", stopCommand, vmid))
-					guestCommands.WriteString(fmt.Sprintf("shutdown_guest %s %d %d\n", stopCommand, vmid, guestTimeout))
-					if delay := intValue(item, "delay", 0); delay > 0 {
-						guestCommands.WriteString(fmt.Sprintf("sleep %d\n", delay))
+					threshold := intValue(item, "shutdown_after_minutes", -1)
+					if threshold < 0 {
+						// Keep compatibility with older settings where the UI stored a delay in seconds.
+						threshold = intValue(item, "delay", 0) / 60
 					}
+					steps = append(steps, shutdownStep{stopCommand: stopCommand, vmid: vmid, timeout: guestTimeout, threshold: threshold})
 				}
 			}
 		}
+	}
+	sort.SliceStable(steps, func(i, j int) bool { return steps[i].threshold > steps[j].threshold })
+	captureCommands := strings.Builder{}
+	shutdownCommands := strings.Builder{}
+	for _, step := range steps {
+		captureCommands.WriteString(fmt.Sprintf("capture_guest %s %d\n", step.stopCommand, step.vmid))
+		if step.threshold >= 0 {
+			shutdownCommands.WriteString(fmt.Sprintf("if [ \"$mode\" = onbatt ]; then\n  if ! wait_for_runtime %d; then\n    log_message \"Power restored before %s %d threshold\"\n    restore_state\n    return 0\n  fi\nfi\n", step.threshold, step.stopCommand, step.vmid))
+		}
+		shutdownCommands.WriteString(fmt.Sprintf("shutdown_guest %s %d %d\n", step.stopCommand, step.vmid, step.timeout))
 	}
 	hostShutdown := stringValue(config, "shutdown_command", "shutdown -h now")
 	nutHost := stringValue(config, "ssh_host", "127.0.0.1")
@@ -391,6 +408,19 @@ ups_status() {
     return 0
   fi
   upsc "$ups_name@$NUT_HOST" ups.status 2>/dev/null || printf 'UNKNOWN\n'
+}
+
+ups_runtime_seconds() {
+  ups_name=$(upsc -l "$NUT_HOST" 2>/dev/null | awk 'NR==1 {print $1; exit}')
+  if [ -z "$ups_name" ]; then
+    printf '0\n'
+    return 0
+  fi
+  runtime=$(upsc "$ups_name@$NUT_HOST" battery.runtime 2>/dev/null || printf '0')
+  case "$runtime" in
+    ''|*[!0-9]*) printf '0\n' ;;
+	    *) printf '%%s\n' "$runtime" ;;
+  esac
 }
 
 power_online() {
@@ -429,6 +459,26 @@ shutdown_guest() {
   else
     log_message "$kind $vmid is already stopped"
   fi
+}
+
+wait_for_runtime() {
+  threshold_minutes="$1"
+  threshold_seconds=$((threshold_minutes * 60))
+  while :; do
+    if [ -e "$LOCK_DIR/force" ]; then
+      log_message "Immediate NUT event received; skipping runtime threshold"
+      return 0
+    fi
+    if power_online; then
+      return 1
+    fi
+    runtime=$(ups_runtime_seconds)
+    if [ "$runtime" -le "$threshold_seconds" ]; then
+      log_message "UPS runtime reached ${threshold_minutes} minutes (${runtime}s)"
+      return 0
+    fi
+    sleep 5
+  done
 }
 
 restore_guest() {
@@ -505,7 +555,7 @@ case "${1:-immediate}" in
   immediate) run_shutdown immediate ;;
   *) log_message "Ignoring unknown shutdown mode: $1"; exit 1 ;;
 esac
-`, shellQuote(nutHost), guestCommandsForCapture(guestCommands.String()), guestCommandsForShutdown(guestCommands.String()), hostShutdown)
+`, shellQuote(nutHost), captureCommands.String(), shutdownCommands.String(), hostShutdown)
 	handlerScript := `#!/bin/sh
 set -u
 LOG_FILE=/var/log/nut-proxmox-shutdown.log
