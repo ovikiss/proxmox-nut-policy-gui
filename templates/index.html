@@ -30,7 +30,7 @@
   </style>
 </head>
 <body class="ups-app">
-  <header class="topbar" data-mikrotik-header-root data-brand="nut" data-brand-text="Proxmox UPS GUI" data-brand-version="v1.0" data-subtitle="192.168.88.120 · NUT: cyberpower"></header>
+  <header class="topbar" data-mikrotik-header-root data-brand="nut" data-brand-text="Proxmox UPS GUI" data-brand-version="v1.2" data-subtitle="192.168.88.120 · NUT: cyberpower"></header>
 
   <div class="ups-connections">
   <section class="card ups-card ups-connection ups-section">
@@ -59,6 +59,7 @@
   <section class="ups-card ups-vm-card ups-section"><h2 data-i18n="vms">VMs</h2><div class="ups-table-head"><div data-i18n="active">Active</div><div data-i18n="vm">VM</div><div data-i18n="status">Status</div><div data-i18n="shutdownAt">Shutdown at</div><div data-i18n="timeout">Timeout</div></div><div id="vm-list"></div><div class="ups-actions"><button class="primary" id="deploy" data-i18n="saveDeploy">Save &amp; Deploy</button><button id="test" data-i18n="testPolicy">Test policy</button><button id="refresh-vms" data-i18n="refreshVms">Refresh VMs</button><span class="ups-result" id="result" data-i18n="lastDeploy">Last deploy: OK</span></div></section>
   <section class="ups-card ups-notice ups-section"><h2 data-i18n="failSafe">Fail-safe</h2><p data-i18n="failSafeText">The rule runs directly on Proxmox through systemd. If the Docker VM stops, UPS shutdown continues independently.</p></section>
 
+  <script src="/common/dropdown-utils.js"></script>
   <script src="/common/header.js"></script>
   <script>
     const formState={},list=document.querySelector('#vm-list'),result=document.querySelector('#result');let translations={};
