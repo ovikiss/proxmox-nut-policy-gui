@@ -24,7 +24,8 @@ var version = "dev"
 var defaults = map[string]any{
 	"ssh_host": "192.168.88.120", "ssh_port": 22, "ssh_user": "root", "ssh_auth_method": "key",
 	"ssh_key": "", "ssh_password": "", "ssh_known_hosts": "",
-	"stop_timeout":     30,
+	"stop_timeout":     180,
+	"battery_minutes":  5,
 	"shutdown_command": "shutdown -h now", "containers": []any{},
 }
 
@@ -54,7 +55,7 @@ func pruneConfig(config map[string]any) map[string]any {
 	allowed := map[string]bool{
 		"ssh_host": true, "ssh_port": true, "ssh_user": true, "ssh_auth_method": true,
 		"ssh_key": true, "ssh_password": true, "ssh_known_hosts": true,
-		"stop_timeout": true, "shutdown_command": true, "containers": true, "ui_settings": true,
+		"stop_timeout": true, "battery_minutes": true, "shutdown_command": true, "containers": true, "ui_settings": true,
 	}
 	pruned := map[string]any{}
 	for key := range allowed {
@@ -202,6 +203,9 @@ func validate(config map[string]any) []string {
 	port := intValue(config, "ssh_port", 0)
 	if intValue(config, "stop_timeout", 0) < 0 {
 		errorsList = append(errorsList, "stop_timeout must be positive")
+	}
+	if intValue(config, "battery_minutes", 0) < 0 {
+		errorsList = append(errorsList, "battery_minutes must be positive")
 	}
 	if port < 1 || port > 65535 {
 		errorsList = append(errorsList, "Invalid SSH port")
