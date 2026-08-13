@@ -769,19 +769,22 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 				jsonResponse(w, 400, map[string]any{"ok": false, "errors": errorsList})
 				return
 			}
+			// Persist the user's settings independently from SSH publishing. This
+			// keeps the Save action reliable even when Proxmox is temporarily
+			// unreachable or the SSH credentials are invalid.
+			if err := saveConfig(config); err != nil {
+				jsonResponse(w, 500, map[string]any{"ok": false, "saved": false, "error": err.Error()})
+				return
+			}
 			client, err := sshClient(config)
 			if err != nil {
-				jsonResponse(w, 400, map[string]any{"ok": false, "error": err.Error()})
+				jsonResponse(w, 400, map[string]any{"ok": false, "saved": true, "error": err.Error()})
 				return
 			}
 			defer client.Close()
 			backup, err := writeRemote(client, remoteFiles(config))
 			if err != nil {
-				jsonResponse(w, 400, map[string]any{"ok": false, "error": err.Error()})
-				return
-			}
-			if err := saveConfig(config); err != nil {
-				jsonResponse(w, 500, map[string]any{"ok": false, "error": err.Error()})
+				jsonResponse(w, 400, map[string]any{"ok": false, "saved": true, "error": err.Error()})
 				return
 			}
 			jsonResponse(w, 200, map[string]any{"ok": true, "backup": backup})
