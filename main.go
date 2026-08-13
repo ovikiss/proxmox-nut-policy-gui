@@ -352,7 +352,7 @@ func remoteFiles(config map[string]any) map[string]string {
 					if stringValue(item, "type", "qemu") == "lxc" {
 						stopCommand = "pct"
 					}
-					commands = append(commands, fmt.Sprintf("%s shutdown %d --timeout %d || true", stopCommand, vmid, intValue(item, "timeout", timeout)))
+					commands = append(commands, fmt.Sprintf("%s shutdown %d --timeout %d --forceStop 1 || true", stopCommand, vmid, intValue(item, "timeout", timeout)))
 					if delay := intValue(item, "delay", 0); delay > 0 {
 						commands = append(commands, fmt.Sprintf("sleep %d", delay))
 					}
