@@ -287,6 +287,54 @@ func proxmoxVMs(client *ssh.Client) ([]map[string]any, error) {
 	return result, nil
 }
 
+func nutStatus(client *ssh.Client, config map[string]any) (map[string]any, error) {
+	host := stringValue(config, "ssh_host", "")
+	if host == "" {
+		return nil, errors.New("SSH host is required")
+	}
+	port := 3493
+	command := fmt.Sprintf(`set -eu
+ups_name=$(upsc -L %s:%d 2>/dev/null | awk -F: 'NR==1 {print $1; exit}')
+if [ -z "$ups_name" ]; then
+  exit 1
+fi
+upsc "${ups_name}@%s:%d" 2>/dev/null
+`, host, port, host, port)
+	output, err := runRemote(client, command)
+	if err != nil {
+		return nil, fmt.Errorf("could not query NUT status: %w: %s", err, output)
+	}
+	values := map[string]string{}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if idx := strings.Index(line, ": "); idx > 0 {
+			values[strings.TrimSpace(line[:idx])] = strings.TrimSpace(line[idx+2:])
+		}
+	}
+	runtimeSeconds, _ := strconv.Atoi(values["battery.runtime"])
+	batteryCharge, _ := strconv.Atoi(values["battery.charge"])
+	upsLoad, _ := strconv.Atoi(values["ups.load"])
+	status := strings.TrimSpace(values["ups.status"])
+	if status == "" {
+		status = "unknown"
+	}
+	return map[string]any{
+		"ups_name":               values["device.model"],
+		"ups_status":             status,
+		"battery_charge":         batteryCharge,
+		"battery_runtime":        runtimeSeconds,
+		"battery_runtime_min":    float64(runtimeSeconds) / 60,
+		"ups_load":               upsLoad,
+		"device_model":           values["device.model"],
+		"device_vendor":          values["ups.mfr"],
+		"status_text":            status,
+		"battery_runtime_string": fmt.Sprintf("%.1f", float64(runtimeSeconds)/60),
+	}, nil
+}
+
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 func remoteFiles(config map[string]any) map[string]string {
@@ -470,6 +518,23 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "vms": vms})
+			return
+		}
+	case "/api/ups/status":
+		if r.Method == http.MethodGet {
+			config := loadConfig()
+			client, err := sshClient(config)
+			if err != nil {
+				jsonResponse(w, http.StatusBadRequest, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			defer client.Close()
+			status, err := nutStatus(client, config)
+			if err != nil {
+				jsonResponse(w, http.StatusBadGateway, map[string]any{"ok": false, "error": err.Error()})
+				return
+			}
+			jsonResponse(w, http.StatusOK, map[string]any{"ok": true, "status": status})
 			return
 		}
 	case "/api/apply":
