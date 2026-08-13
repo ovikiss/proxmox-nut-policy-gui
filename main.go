@@ -24,9 +24,7 @@ var version = "dev"
 var defaults = map[string]any{
 	"ssh_host": "192.168.88.120", "ssh_port": 22, "ssh_user": "root", "ssh_auth_method": "key",
 	"ssh_key": "", "ssh_password": "", "ssh_known_hosts": "",
-	"ups_host": "127.0.0.1", "ups_port": 3493, "nut_user": "nutmon", "nut_password": "change-this",
-	"ups_name": "cyberpower", "ups_driver": "usbhid-ups", "ups_description": "CyberPower UPS",
-	"upsmon_password": "change-this", "battery_minutes": 5, "low_battery_minutes": 2, "stop_timeout": 30,
+	"stop_timeout": 30,
 	"shutdown_command": "shutdown -h now", "containers": []any{},
 }
 
@@ -52,7 +50,23 @@ func cloneMap(src map[string]any) map[string]any {
 	return dst
 }
 
+func pruneConfig(config map[string]any) map[string]any {
+	allowed := map[string]bool{
+		"ssh_host": true, "ssh_port": true, "ssh_user": true, "ssh_auth_method": true,
+		"ssh_key": true, "ssh_password": true, "ssh_known_hosts": true,
+		"stop_timeout": true, "shutdown_command": true, "containers": true, "ui_settings": true,
+	}
+	pruned := map[string]any{}
+	for key := range allowed {
+		if value, ok := config[key]; ok {
+			pruned[key] = value
+		}
+	}
+	return pruned
+}
+
 func saveConfig(config map[string]any) error {
+	config = pruneConfig(config)
 	path := settingsPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
@@ -83,17 +97,14 @@ func environmentConfig() map[string]any {
 	mapping := map[string]string{
 		"PROXMOX_SSH_HOST": "ssh_host", "PROXMOX_SSH_PORT": "ssh_port", "PROXMOX_SSH_USER": "ssh_user",
 		"PROXMOX_SSH_AUTH_METHOD": "ssh_auth_method", "PROXMOX_SSH_KEY": "ssh_key", "PROXMOX_SSH_PASSWORD": "ssh_password",
-		"PROXMOX_SSH_KNOWN_HOSTS": "ssh_known_hosts", "UPS_HOST": "ups_host", "UPS_PORT": "ups_port",
-		"UPS_NAME": "ups_name", "UPS_DRIVER": "ups_driver", "UPS_DESCRIPTION": "ups_description",
-		"NUT_USER": "nut_user", "NUT_PASSWORD": "nut_password", "UPSMON_PASSWORD": "upsmon_password",
-		"BATTERY_MINUTES": "battery_minutes", "LOW_BATTERY_MINUTES": "low_battery_minutes", "STOP_TIMEOUT": "stop_timeout",
+		"PROXMOX_SSH_KNOWN_HOSTS": "ssh_known_hosts", "STOP_TIMEOUT": "stop_timeout",
 		"SHUTDOWN_COMMAND": "shutdown_command",
 	}
 	config := map[string]any{}
 	for envName, key := range mapping {
 		if value := os.Getenv(envName); value != "" {
 			config[key] = value
-			if key == "ssh_port" || key == "ups_port" || key == "battery_minutes" || key == "low_battery_minutes" || key == "stop_timeout" {
+			if key == "ssh_port" || key == "stop_timeout" {
 				if number, err := strconv.Atoi(value); err == nil {
 					config[key] = number
 				}
@@ -150,7 +161,7 @@ func loadConfig() map[string]any {
 		}
 		_ = saveConfig(config)
 	}
-	return config
+	return pruneConfig(config)
 }
 
 func stringValue(config map[string]any, key, fallback string) string {
@@ -183,29 +194,17 @@ func enabledValue(config map[string]any) bool {
 
 func validate(config map[string]any) []string {
 	errorsList := []string{}
-	for _, key := range []string{"ssh_host", "ssh_user", "ups_name", "ups_driver"} {
+	for _, key := range []string{"ssh_host", "ssh_user"} {
 		if strings.TrimSpace(stringValue(config, key, "")) == "" {
 			errorsList = append(errorsList, key+" is required")
 		}
 	}
-	battery, low, port, upsPort := intValue(config, "battery_minutes", 0), intValue(config, "low_battery_minutes", 0), intValue(config, "ssh_port", 0), intValue(config, "ups_port", 0)
-	if battery < 0 {
-		errorsList = append(errorsList, "battery_minutes must be positive")
-	}
-	if low < 0 {
-		errorsList = append(errorsList, "low_battery_minutes must be positive")
-	}
+	port := intValue(config, "ssh_port", 0)
 	if intValue(config, "stop_timeout", 0) < 0 {
 		errorsList = append(errorsList, "stop_timeout must be positive")
 	}
-	if low > battery {
-		errorsList = append(errorsList, "The critical battery threshold cannot exceed the main timer")
-	}
 	if port < 1 || port > 65535 {
 		errorsList = append(errorsList, "Invalid SSH port")
-	}
-	if upsPort < 1 || upsPort > 65535 {
-		errorsList = append(errorsList, "Invalid UPS/NUT port")
 	}
 	method := stringValue(config, "ssh_auth_method", "key")
 	if method != "key" && method != "password" {
@@ -291,14 +290,7 @@ func proxmoxVMs(client *ssh.Client) ([]map[string]any, error) {
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\\''") + "'" }
 
 func remoteFiles(config map[string]any) map[string]string {
-	name, minutes := stringValue(config, "ups_name", "cyberpower"), intValue(config, "battery_minutes", 5)
 	timeout := intValue(config, "stop_timeout", 30)
-	upsHost, upsPort := stringValue(config, "ups_host", "127.0.0.1"), intValue(config, "ups_port", 3493)
-	monitorTarget := fmt.Sprintf("%s@%s:%d", name, upsHost, upsPort)
-	driverPort := upsHost
-	if stringValue(config, "ups_driver", "usbhid-ups") == "usbhid-ups" {
-		driverPort = "auto"
-	}
 	commands := []string{}
 	if containers, ok := config["containers"].([]any); ok {
 		for _, raw := range containers {
@@ -321,12 +313,7 @@ func remoteFiles(config map[string]any) map[string]string {
 		}
 	}
 	commands = append(commands, stringValue(config, "shutdown_command", "shutdown -h now"))
-	nutUser, nutPassword := stringValue(config, "nut_user", "nutmon"), stringValue(config, "nut_password", "change-this")
 	return map[string]string{
-		"/etc/nut/ups.conf":                    fmt.Sprintf("[%s]\n  driver = %s\n  port = %s\n  desc = %s\n", name, stringValue(config, "ups_driver", "usbhid-ups"), driverPort, stringValue(config, "ups_description", "CyberPower UPS")),
-		"/etc/nut/upsd.users":                  fmt.Sprintf("[%s]\n  password = %s\n  upsmon master\n", nutUser, nutPassword),
-		"/etc/nut/upsmon.conf":                 fmt.Sprintf("MONITOR %s 1 %s %s master\nMINSUPPLIES 1\nSHUTDOWNCMD \"/usr/local/sbin/nut-proxmox-shutdown\"\nPOWERDOWNFLAG /etc/killpower\nPOLLFREQ 5\nPOLLFREQALERT 5\nHOSTSYNC 15\nDEADTIME 15\nFINALDELAY 5\nNOTIFYCMD /usr/sbin/upssched\nNOTIFYFLAG ONLINE SYSLOG+EXEC\nNOTIFYFLAG ONBATT SYSLOG+EXEC\nNOTIFYFLAG LOWBATT SYSLOG+EXEC\nNOTIFYFLAG FSD SYSLOG+EXEC\n", monitorTarget, nutUser, nutPassword),
-		"/etc/nut/upssched.conf":               fmt.Sprintf("CMDSCRIPT /usr/local/sbin/nut-upssched-cmd\nPIPEFN /run/nut/upssched.pipe\nLOCKFN /run/nut/upssched.lock\nAT ONBATT * START-TIMER onbatt %d\nAT ONLINE * CANCEL-TIMER onbatt\nAT LOWBATT * EXECUTE lowbatt\nAT FSD * EXECUTE fsd\n", minutes*60),
 		"/usr/local/sbin/nut-proxmox-shutdown": "#!/bin/sh\nset -eu\n" + strings.Join(commands, "\n") + "\n",
 		"/usr/local/sbin/nut-upssched-cmd":     "#!/bin/sh\ncase \"$1\" in\n  onbatt|lowbatt|fsd) exec /usr/local/sbin/nut-proxmox-shutdown ;;\n  *) exit 0 ;;\nesac\n",
 	}
@@ -343,7 +330,19 @@ func writeRemote(client *ssh.Client, files map[string]string) (string, error) {
 		return "", err
 	}
 	defer sftpClient.Close()
+	preserveIfExists := map[string]bool{
+		"/etc/nut/ups.conf":    true,
+		"/etc/nut/upsd.users":  true,
+		"/etc/nut/upsmon.conf": true,
+	}
 	for path, content := range files {
+		if preserveIfExists[path] {
+			if _, err := sftpClient.Stat(path); err == nil {
+				continue
+			} else if !os.IsNotExist(err) {
+				return "", err
+			}
+		}
 		if err := sftpClient.MkdirAll(filepath.Dir(path)); err != nil {
 			return "", err
 		}
@@ -365,9 +364,6 @@ func writeRemote(client *ssh.Client, files map[string]string) (string, error) {
 				return "", err
 			}
 		}
-	}
-	if _, err := runRemote(client, "systemctl enable --now nut-server nut-monitor 2>/dev/null || systemctl restart nut-server nut-monitor"); err != nil {
-		return "", err
 	}
 	return backup, nil
 }
@@ -446,7 +442,7 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			defer client.Close()
-			output, err := runRemote(client, "hostname && command -v docker || true && systemctl is-active nut-server || true")
+			output, err := runRemote(client, "hostname && command -v pvesh && command -v qm && command -v pct")
 			if err != nil {
 				jsonResponse(w, 400, map[string]any{"ok": false, "error": err.Error() + ": " + output})
 				return
