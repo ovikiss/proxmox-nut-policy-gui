@@ -579,9 +579,7 @@ func guestCommandsForShutdown(commands string) string {
 }
 
 func writeRemote(client *ssh.Client, files map[string]string) (string, error) {
-	stamp := time.Now().UTC().Format("20060102-150405")
-	backup := "/root/nut-gui-backup-" + stamp
-	if _, err := runRemote(client, "mkdir -p "+shellQuote(backup)+" /usr/local/sbin"); err != nil {
+	if _, err := runRemote(client, "mkdir -p /usr/local/sbin"); err != nil {
 		return "", err
 	}
 	sftpClient, err := sftp.NewClient(client)
@@ -605,7 +603,6 @@ func writeRemote(client *ssh.Client, files map[string]string) (string, error) {
 		if err := sftpClient.MkdirAll(filepath.Dir(path)); err != nil {
 			return "", err
 		}
-		_, _ = runRemote(client, "test ! -e "+shellQuote(path)+" || cp -a "+shellQuote(path)+" "+shellQuote(backup)+"/")
 		file, err := sftpClient.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 		if err != nil {
 			return "", err
@@ -624,7 +621,7 @@ func writeRemote(client *ssh.Client, files map[string]string) (string, error) {
 			}
 		}
 	}
-	return backup, nil
+	return "", nil
 }
 
 func jsonResponse(w http.ResponseWriter, status int, value any) {

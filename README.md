@@ -33,7 +33,7 @@ Compose variables include `PROXMOX_SSH_HOST`, `PROXMOX_SSH_PORT`, `PROXMOX_SSH_U
 ## Warnings
 
 - Without `ssh_known_hosts`, the app automatically accepts the SSH host key on first connection. For production, mount a `known_hosts` file and configure its path.
-- A backup is created at `/root/nut-gui-backup-YYYYMMDD-HHMMSS` on Proxmox before deployment.
+- The app does not create automatic backup directories on Proxmox; keep a separate host backup if rollback is required.
 - The SSH account must be able to run `pvesh`, `qm` and `pct`; `root` is typically used.
 - Deployment updates the shutdown helper scripts on Proxmox; test during a maintenance window first.
 
