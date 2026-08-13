@@ -406,6 +406,11 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 			jsonResponse(w, 200, map[string]any{"ok": true, "config": config})
 			return
 		}
+	case "/api/meta":
+		if r.Method == http.MethodGet {
+			jsonResponse(w, http.StatusOK, map[string]any{"version": version})
+			return
+		}
 	case "/api/settings.json":
 		if r.Method == http.MethodGet {
 			settings := loadConfig()["ui_settings"]
