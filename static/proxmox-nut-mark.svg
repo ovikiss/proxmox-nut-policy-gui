@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
-  <title id="title">Proxmox NUT</title>
-  <desc id="desc">Proxmox hexagon combined with a UPS power symbol</desc>
-  <path fill="#e85d2a" d="M32 3 57 17v30L32 61 7 47V17L32 3Z"/>
-  <path fill="#fff" d="m32 10 18 10v24L32 54 14 44V20l18-10Zm0 5.2L19 22.4v19.2l13 7.2 13-7.2V22.4L32 15.2Z"/>
-  <path fill="#2878c7" d="M35.4 18.5h-6.1v12.1h-7.1L32 46l3.7-10.1h6.1l-6.4-17.4Z"/>
-  <path fill="#fff" d="M45.5 28.3h4.1v8.1h-4.1zM14.4 28.3h4.1v8.1h-4.1z" opacity=".95"/>
-</svg>
