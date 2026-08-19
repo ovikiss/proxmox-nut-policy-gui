@@ -15,7 +15,7 @@ on:
         description: "Completed runs to keep per workflow/ref"
         type: string
         required: true
-        default: "5"
+        default: "3"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -65,7 +65,7 @@ jobs:
           package = os.environ["PACKAGE"]
           token = os.environ["GH_TOKEN"]
           dry_run = os.environ.get("DRY_RUN", "false").lower() in {"1", "true", "yes", "on"}
-          keep_runs = max(1, int(os.environ.get("KEEP_RUNS_PER_REF") or "5"))
+          keep_runs = max(1, int(os.environ.get("KEEP_RUNS_PER_REF") or "3"))
           api_base = "https://api.github.com"
           headers = {
               "Authorization": f"Bearer {token}",
@@ -142,16 +142,32 @@ jobs:
           print("== GHCR cleanup ==")
           versions = paginate(f"/users/{owner}/packages/container/{package}/versions?per_page=100")
           image_base = f"ghcr.io/{owner}/{package}"
-          protected = protected_manifest_digests(f"{image_base}:latest")
+          release_created = {}
+          for version in versions:
+              created = version.get("created_at") or ""
+              for tag in ((version.get("metadata") or {}).get("container") or {}).get("tags") or []:
+                  match = re.fullmatch(r"(v\d+\.\d+(?:\.\d+)?)(?:-.+)?", str(tag))
+                  if match:
+                      family = match.group(1)
+                      release_created[family] = max(release_created.get(family, ""), created)
+          keep_families = {family for family, _ in sorted(release_created.items(), key=lambda item: item[1], reverse=True)[:3]}
+          protected_tags = {"latest"}
+          for family in keep_families:
+              protected_tags.add(family)
+          protected = set()
           for version in versions:
               tags = ((version.get("metadata") or {}).get("container") or {}).get("tags") or []
               for tag in tags:
-                  if re.fullmatch(r"v\d+\.\d+(?:\.\d+)?", tag):
+                  if tag == "latest" or tag.startswith("latest-") or any(tag == family or tag.startswith(family + "-") for family in keep_families):
+                      protected_tags.add(tag)
                       protected.update(protected_manifest_digests(f"{image_base}:{tag}"))
           untagged = []
           for version in versions:
               tags = ((version.get("metadata") or {}).get("container") or {}).get("tags") or []
               if tags:
+                  if any(tag == "latest" or tag.startswith("latest-") or any(tag == family or tag.startswith(family + "-") for family in keep_families) for tag in tags):
+                      continue
+                  delete_or_print("GHCR version", version["id"], f"/users/{owner}/packages/container/{package}/versions/{version['id']}")
                   continue
               created = version.get("created_at")
               try:
@@ -164,7 +180,7 @@ jobs:
           for index, (version, created_at) in enumerate(untagged):
               if version.get("name") in protected:
                   continue
-              if index < 20 or (now - created_at).total_seconds() < 48 * 3600:
+              if (now - created_at).total_seconds() < 48 * 3600:
                   continue
               delete_or_print("GHCR version", version["id"], f"/users/{owner}/packages/container/{package}/versions/{version['id']}")
           print("Housekeeping complete.")
