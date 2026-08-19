@@ -35,6 +35,12 @@
     /* Keep app-specific layout, but inherit all card surfaces from mikrotik-ui-shared. */
     body.ups-app .ups-card{background:var(--card);border:0.5px solid var(--border);border-radius:20px;padding:12px;backdrop-filter:var(--glass-blur);-webkit-backdrop-filter:var(--glass-blur);box-shadow:var(--glass-shadow),var(--glass-inset)}
   </style>
+  <style>
+    /* Keep the SSH action buttons consistent with the app actions in every shared theme. */
+    body.ups-app .ssh-actions button{border:0;border-radius:8px;padding:12px 24px;font-size:1em;font-weight:700;cursor:pointer;background:#27303f;color:var(--text)}
+    body.ups-app .ssh-actions button.primary{background:var(--ups-accent);color:#071426}
+    body.ups-app .ssh-actions button:disabled{opacity:.6;cursor:wait}
+  </style>
 </head>
 <body class="ups-app">
   <header class="topbar" data-mikrotik-header-root data-brand="nut" data-brand-image="/proxmox-nut-mark.png?v=1" data-brand-text="Proxmox NUT Policy GUI" data-brand-version="" data-subtitle=""></header>
