@@ -9,6 +9,7 @@ RUN go mod download
 COPY main.go .
 COPY templates templates
 COPY static/header-controls.json static/header-controls.json
+COPY static/proxmox-nut-mark.png static/proxmox-nut-mark.png
 COPY scripts/sync-ui-shared.sh scripts/sync-ui-shared.sh
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
